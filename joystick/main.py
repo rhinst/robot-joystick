@@ -1,13 +1,11 @@
 import json
 import time
-from typing import Tuple, Dict, Union
+from typing import Tuple, Dict
 import logging
 from dataclasses import dataclass
 
 from redis import Redis
 import Adafruit_ADS1x15
-
-
 
 
 @dataclass
@@ -24,7 +22,6 @@ class Axis:
 
 
 class Joystick:
-
     adc: Adafruit_ADS1x15.ADS1015
 
     # Choose a gain of 1 for reading voltages from 0 to 4.09V.
@@ -41,26 +38,23 @@ class Joystick:
 
     y_axis: Axis
 
-
     def __init__(self, **kwargs):
         self.adc = Adafruit_ADS1x15.ADS1015()
         self.gain = kwargs['gain'] if 'gain' in kwargs else 1
-        #set conservative starting min/max bounds
+        # set conservative starting min/max bounds
         self.x_axis = Axis(min=200, max=1500, center=800)
         self.y_axis = Axis(min=200, max=1500, center=800)
-
 
     def calibrate(self):
         calibration_values = [[], []]
         for i in range(10):
-            values = [[], []]
-            for i in range(2):
-                calibration_values[i].append(self.adc.read_adc(i, gain=self.gain))
+            for k in range(2):
+                calibration_values[k].append(self.adc.read_adc(k, gain=self.gain))
             time.sleep(0.2)
-        self.x_axis.center = sum(calibration_values[0])/len(calibration_values[0])
+        self.x_axis.center = sum(calibration_values[0]) / len(calibration_values[0])
         self.x_axis.min = self.x_axis.center
         self.x_axis.max = self.x_axis.center
-        self.y_axis.center = sum(calibration_values[1])/len(calibration_values[1])
+        self.y_axis.center = sum(calibration_values[1]) / len(calibration_values[1])
         self.y_axis.min = self.y_axis.center
         self.y_axis.max = self.y_axis.center
 
@@ -71,11 +65,13 @@ class Joystick:
         self.y_axis.max = max(self.y_axis.max, y)
 
     def _normalize(self, x: int, y: int) -> Tuple[float, float]:
-        normalized_x = 0 if x == self.x_axis.center else ((x - self.x_axis.center) / (self.x_axis.max - self.x_axis.center))
-        normalized_y = 0 if y == self.y_axis.center else ((y - self.y_axis.center) / (self.y_axis.max - self.y_axis.center))
+        normalized_x = 0 if x == self.x_axis.center else (
+                    (x - self.x_axis.center) / (self.x_axis.max - self.x_axis.center))
+        normalized_y = 0 if y == self.y_axis.center else (
+                    (y - self.y_axis.center) / (self.y_axis.max - self.y_axis.center))
         return round(normalized_x, 1), round(normalized_y, 1)
 
-    def get_position(self) -> float:
+    def get_position(self) -> Tuple[float, float]:
         x_val = self.adc.read_adc(0, gain=self.gain)
         y_val = self.adc.read_adc(1, gain=self.gain)
         self._update_bounds(x_val, y_val)
@@ -86,7 +82,7 @@ logger: logging.Logger
 motor_states: Dict[str, MotorState]
 
 
-def drive_motor(position: str, speed: float, direction: str):
+def drive_motor(redis_client: Redis, position: str, speed: float, direction: str):
     global motor_states
 
     new_state = MotorState(speed=speed, direction=direction)
@@ -101,7 +97,7 @@ def drive_motor(position: str, speed: float, direction: str):
         motor_states[position] = new_state
 
 
-def stop_motors():
+def stop_motors(redis_client: Redis):
     global motor_states
 
     send_command = False
@@ -126,7 +122,6 @@ def initialize_motors():
         "rear_right": MotorState(speed=0, direction="forward"),
     }
 
-        
 
 def main():
     global logger
@@ -136,7 +131,6 @@ def main():
 
     redis_client = Redis(host="192.168.86.28", port=6379, db=0)
 
-    
     joystick = Joystick(gain=1)
     joystick.calibrate()
     initialize_motors()
@@ -146,18 +140,18 @@ def main():
             speed = x
             direction = "backward" if y < 0 else "forward"
             if speed == 0:
-                stop_motors()
-            else: 
-                drive_motors("front_left", speed, direction)
-                drive_motors("front_right", speed, direction)
-                drive_motors("rear_left", speed, direction)
-                drive_motors("rear_right", speed, direction)
+                stop_motors(redis_client)
+            else:
+                drive_motor(redis_client, "front_left", speed, direction)
+                drive_motor(redis_client, "front_right", speed, direction)
+                drive_motor(redis_client, "rear_left", speed, direction)
+                drive_motor(redis_client, "rear_right", speed, direction)
             logger.debug(f"speed={speed}, direction={direction}")
             # Pause for half a second.
             time.sleep(0.5)
     finally:
         message = json.dumps({
-             "command": "stop"
+            "command": "stop"
         })
         redis_client.publish("subsystem.motor.command", message)
 
