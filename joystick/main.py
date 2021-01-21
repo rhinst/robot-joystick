@@ -9,8 +9,8 @@ from redis import Redis
 
 from joystick.adc import ADC
 
-#REDIS_SERVER = "192.168.86.28"
-REDIS_SERVER = "127.0.0.1"
+REDIS_SERVER = "192.168.86.28"
+#REDIS_SERVER = "127.0.0.1"
 REDIS_PORT = 6379
 
 logger: logging.Logger
@@ -134,12 +134,14 @@ def initialize_motors():
 
 
 def calculate_motor_speeds(x: float, y: float) -> Tuple[float, float]:
-    dominant_speed = round(sqrt((x * x) + (y * y)), 1)
+    dominant_speed = round(sqrt((x * x) + (y * y)), 1) 
+    if y < 0:
+        dominant_speed = -dominant_speed
     #avoid division by zero errors
     if y == 0:
         y = 0.00001
     weak_speed = round(dominant_speed * (1 - (abs(atan(x / y)) * (2 / (pi / 2)))), 1)
-    return (dominant_speed, weak_speed) if x < 0 else (weak_speed, dominant_speed)
+    return (dominant_speed, weak_speed) if x > 0 else (weak_speed, dominant_speed)
 
 
 def main():
@@ -156,17 +158,17 @@ def main():
     try:
         while True:
             x, y = joystick.get_position()
+            logger.debug(f"Normalized coordinates: ({x}, {y})")
             l_speed, r_speed = calculate_motor_speeds(x, y)
             logger.debug(f"Left Speed={l_speed}, Right Speed={r_speed}")
             if l_speed == 0 and r_speed == 0:
                 stop_motors(redis_client)
             else:
                 drive_motor(redis_client, "front_left", abs(l_speed), "forward" if l_speed > 0 else "backward")
-                drive_motor(redis_client, "front_right", abs(l_speed), "forward" if l_speed > 0 else "backward")
-                drive_motor(redis_client, "rear_left", abs(r_speed), "forward" if r_speed > 0 else "backward")
+                drive_motor(redis_client, "front_right", abs(r_speed), "forward" if r_speed > 0 else "backward")
+                drive_motor(redis_client, "rear_left", abs(l_speed), "forward" if l_speed > 0 else "backward")
                 drive_motor(redis_client, "rear_right", abs(r_speed), "forward" if r_speed > 0 else "backward")
-            # Pause for half a second.
-            time.sleep(0.5)
+            time.sleep(0.1)
     finally:
         message = json.dumps({
             "command": "stop"
