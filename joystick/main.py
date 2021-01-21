@@ -9,6 +9,12 @@ from redis import Redis
 
 from joystick.adc import ADC
 
+#REDIS_SERVER = "192.168.86.28"
+REDIS_SERVER = "127.0.0.1"
+REDIS_PORT = 6379
+
+logger: logging.Logger
+
 
 @dataclass
 class MotorState:
@@ -48,6 +54,7 @@ class Joystick:
         self.y_axis = Axis(min=200, max=1500, center=800)
 
     def calibrate(self):
+        logger.debug("Calibrating joystick bounds")
         calibration_values = [[], []]
         for i in range(10):
             for k in range(2):
@@ -59,14 +66,19 @@ class Joystick:
         self.y_axis.center = sum(calibration_values[1]) / len(calibration_values[1])
         self.y_axis.min = self.y_axis.center
         self.y_axis.max = self.y_axis.center
+        logger.debug(f"X Bounds: Min={self.x_axis.min}, Center={self.x_axis.center}, Max={self.x_axis.max}")
+        logger.debug(f"Y Bounds: Min={self.y_axis.min}, Center={self.y_axis.center}, Max={self.y_axis.max}")
 
     def _update_bounds(self, x: int, y: int):
         self.x_axis.min = min(self.x_axis.min, x)
         self.x_axis.max = max(self.x_axis.max, x)
         self.y_axis.min = min(self.y_axis.min, y)
         self.y_axis.max = max(self.y_axis.max, y)
+        logger.debug(f"X Bounds: Min={self.x_axis.min}, Center={self.x_axis.center}, Max={self.x_axis.max}")
+        logger.debug(f"Y Bounds: Min={self.y_axis.min}, Center={self.y_axis.center}, Max={self.y_axis.max}")
 
     def _normalize(self, x: int, y: int) -> Tuple[float, float]:
+        logger.debug(f"Normalizing coordinates: ({x}, {y})")
         normalized_x = 0 if x == self.x_axis.center else (
                 (x - self.x_axis.center) / (self.x_axis.max - self.x_axis.center))
         normalized_y = 0 if y == self.y_axis.center else (
@@ -77,10 +89,10 @@ class Joystick:
         x_val = self.adc.read_adc(0, gain=self.gain)
         y_val = self.adc.read_adc(1, gain=self.gain)
         self._update_bounds(x_val, y_val)
+        logger.debug(f"Read values from ADC: ({x_val}, {y_val})")
         return self._normalize(x_val, y_val)
 
 
-logger: logging.Logger
 motor_states: Dict[str, MotorState]
 
 
@@ -127,6 +139,9 @@ def initialize_motors():
 
 def get_motor_speeds(x: float, y: float) -> Tuple[float, float]:
     dominant_speed = round(sqrt((x * x) + (y * y)), 1)
+    #avoid division by zero errors
+    if y == 0:
+        y = 0.00001
     weak_speed = round(dominant_speed * (1 - (abs(atan(x / y)) * (pi * 2))), 1)
     return (dominant_speed, weak_speed) if x < 0 else (weak_speed, dominant_speed)
 
@@ -137,7 +152,7 @@ def main():
     logging.basicConfig(level=logging.DEBUG)
     logger = logging.getLogger()
 
-    redis_client = Redis(host="192.168.86.28", port=6379, db=0)
+    redis_client = Redis(host=REDIS_SERVER, port=REDIS_PORT, db=0)
 
     joystick = Joystick(gain=1)
     joystick.calibrate()
