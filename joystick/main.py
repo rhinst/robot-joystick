@@ -61,11 +61,7 @@ class Joystick:
                 calibration_values[k].append(self.adc.read_adc(k, gain=self.gain))
             time.sleep(0.2)
         self.x_axis.center = sum(calibration_values[0]) / len(calibration_values[0])
-        self.x_axis.min = self.x_axis.center
-        self.x_axis.max = self.x_axis.center
         self.y_axis.center = sum(calibration_values[1]) / len(calibration_values[1])
-        self.y_axis.min = self.y_axis.center
-        self.y_axis.max = self.y_axis.center
         logger.debug(f"X Bounds: Min={self.x_axis.min}, Center={self.x_axis.center}, Max={self.x_axis.max}")
         logger.debug(f"Y Bounds: Min={self.y_axis.min}, Center={self.y_axis.center}, Max={self.y_axis.max}")
 
@@ -137,12 +133,12 @@ def initialize_motors():
     }
 
 
-def get_motor_speeds(x: float, y: float) -> Tuple[float, float]:
+def calculate_motor_speeds(x: float, y: float) -> Tuple[float, float]:
     dominant_speed = round(sqrt((x * x) + (y * y)), 1)
     #avoid division by zero errors
     if y == 0:
         y = 0.00001
-    weak_speed = round(dominant_speed * (1 - (abs(atan(x / y)) * (pi * 2))), 1)
+    weak_speed = round(dominant_speed * (1 - (abs(atan(x / y)) * (2 / (pi / 2)))), 1)
     return (dominant_speed, weak_speed) if x < 0 else (weak_speed, dominant_speed)
 
 
@@ -160,7 +156,7 @@ def main():
     try:
         while True:
             x, y = joystick.get_position()
-            l_speed, r_speed = get_motor_speeds(x, y)
+            l_speed, r_speed = calculate_motor_speeds(x, y)
             logger.debug(f"Left Speed={l_speed}, Right Speed={r_speed}")
             if l_speed == 0 and r_speed == 0:
                 stop_motors(redis_client)
