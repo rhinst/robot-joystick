@@ -3,9 +3,11 @@ import time
 from typing import Tuple, Dict
 import logging
 from dataclasses import dataclass
+from math import atan, sqrt, pi
 
 from redis import Redis
-import Adafruit_ADS1x15
+
+from joystick.adc import ADC
 
 
 @dataclass
@@ -22,7 +24,7 @@ class Axis:
 
 
 class Joystick:
-    adc: Adafruit_ADS1x15.ADS1015
+    adc: ADC
 
     # Choose a gain of 1 for reading voltages from 0 to 4.09V.
     # Or pick a different gain to change the range of voltages that are read:
@@ -39,7 +41,7 @@ class Joystick:
     y_axis: Axis
 
     def __init__(self, **kwargs):
-        self.adc = Adafruit_ADS1x15.ADS1015()
+        self.adc = ADC()
         self.gain = kwargs['gain'] if 'gain' in kwargs else 1
         # set conservative starting min/max bounds
         self.x_axis = Axis(min=200, max=1500, center=800)
@@ -66,9 +68,9 @@ class Joystick:
 
     def _normalize(self, x: int, y: int) -> Tuple[float, float]:
         normalized_x = 0 if x == self.x_axis.center else (
-                    (x - self.x_axis.center) / (self.x_axis.max - self.x_axis.center))
+                (x - self.x_axis.center) / (self.x_axis.max - self.x_axis.center))
         normalized_y = 0 if y == self.y_axis.center else (
-                    (y - self.y_axis.center) / (self.y_axis.max - self.y_axis.center))
+                (y - self.y_axis.center) / (self.y_axis.max - self.y_axis.center))
         return round(normalized_x, 1), round(normalized_y, 1)
 
     def get_position(self) -> Tuple[float, float]:
@@ -123,6 +125,12 @@ def initialize_motors():
     }
 
 
+def get_motor_speeds(x: float, y: float) -> Tuple[float, float]:
+    dominant_speed = sqrt((x * x) + (y * y))
+    weak_speed = dominant_speed * (1 - (abs(atan(x / y)) * (pi * 2)))
+    return (dominant_speed, weak_speed) if x < 0 else (weak_speed, dominant_speed)
+
+
 def main():
     global logger
 
@@ -137,16 +145,15 @@ def main():
     try:
         while True:
             x, y = joystick.get_position()
-            speed = x
-            direction = "backward" if y < 0 else "forward"
-            if speed == 0:
+            l_speed, r_speed = get_motor_speeds(x, y)
+            logger.debug(f"Left Speed={l_speed}, Right Speed={r_speed}")
+            if l_speed == 0 and r_speed == 0:
                 stop_motors(redis_client)
             else:
-                drive_motor(redis_client, "front_left", speed, direction)
-                drive_motor(redis_client, "front_right", speed, direction)
-                drive_motor(redis_client, "rear_left", speed, direction)
-                drive_motor(redis_client, "rear_right", speed, direction)
-            logger.debug(f"speed={speed}, direction={direction}")
+                drive_motor(redis_client, "front_left", abs(l_speed), "forward" if l_speed > 0 else "backward")
+                drive_motor(redis_client, "front_right", abs(l_speed), "forward" if l_speed > 0 else "backward")
+                drive_motor(redis_client, "rear_left", abs(r_speed), "forward" if r_speed > 0 else "backward")
+                drive_motor(redis_client, "rear_right", abs(r_speed), "forward" if r_speed > 0 else "backward")
             # Pause for half a second.
             time.sleep(0.5)
     finally:
