@@ -126,8 +126,8 @@ def initialize_motors():
 
 
 def get_motor_speeds(x: float, y: float) -> Tuple[float, float]:
-    dominant_speed = sqrt((x * x) + (y * y))
-    weak_speed = dominant_speed * (1 - (abs(atan(x / y)) * (pi * 2)))
+    dominant_speed = round(sqrt((x * x) + (y * y)), 1)
+    weak_speed = round(dominant_speed * (1 - (abs(atan(x / y)) * (pi * 2))), 1)
     return (dominant_speed, weak_speed) if x < 0 else (weak_speed, dominant_speed)
 
 
