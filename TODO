@@ -1,0 +1,2 @@
+* Add an LED that goes on when the joystick is calibrated and connected to redis successfully
+* Add a redis connect loop. so that it doesn't matter whether the robot or joystick is powered on first.
